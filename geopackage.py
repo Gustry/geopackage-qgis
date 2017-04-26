@@ -184,9 +184,13 @@ class GeoPackage(object):
         name = name.encode('utf-8')
 
         gdal_spatial_reference = osr.SpatialReference()
-        qgis_spatial_reference = crs.authid()
-        gdal_spatial_reference.ImportFromEPSG(
-            int(qgis_spatial_reference.split(':')[1]))
+        if crs:
+            qgis_spatial_reference = crs.authid()
+            gdal_spatial_reference.ImportFromEPSG(
+                int(qgis_spatial_reference.split(':')[1]))
+
+        if not geometry:
+            geometry = ogr.wkbNone
 
         vector_datasource = GeoPackage.vector_driver.Open(
             self._uri.absoluteFilePath(), True)
@@ -294,3 +298,7 @@ class GeoPackage(object):
 # # print "ADD"
 # layer = iface.activeLayer()
 # print geopackage.add_vector_layer(layer, pk='id')
+
+
+# geopackage.create_vector_layer('csv', new_fields, pk='id')
+# print geopackage.uri
