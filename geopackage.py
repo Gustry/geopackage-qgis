@@ -179,12 +179,7 @@ class GeoPackage(object):
 
         options = []
         if pk:
-            for field in fields:
-                if field.name() == pk:
-                    options += ['FID=' + pk]
-                    break
-            else:
-                return False, 'The PK is not in the fields'
+            options += ['FID=' + pk]
 
         name = name.encode('utf-8')
 
@@ -233,7 +228,7 @@ class GeoPackage(object):
         for feature in layer.getFeatures():
             out_feature = QgsFeature(feature)
             attributes = feature.attributes()
-            if not pk:
+            if not pk or pk not in [f.name() for f in layer.fields().toList()]:
                 attributes.insert(0, feature.id())
             out_feature.setAttributes(attributes)
             res = vector_layer.addFeature(out_feature, False)
@@ -298,4 +293,4 @@ class GeoPackage(object):
 # #
 # # print "ADD"
 # layer = iface.activeLayer()
-# print geopackage.add_vector_layer(layer, pk='OBJECTID')
+# print geopackage.add_vector_layer(layer, pk='id')
