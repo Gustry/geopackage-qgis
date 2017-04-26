@@ -3,6 +3,7 @@ from PyQt4.QtCore import QFileInfo
 from qgis.core import (
     QgsVectorLayer,
     QgsRasterLayer,
+    QgsFeature,
 )
 
 # From https://qgis.org/api/classQGis.html#a8da456870e1caec209d8ba7502cceff7
@@ -154,7 +155,7 @@ class GeoPackage(object):
 
         return layer
 
-    def create_vector_layer(self, name, fields, crs=None, geometry=None):
+    def create_vector_layer(self, name, fields, crs=None, geometry=None, pk=None):
         """Create a vector layer from scratch.
         
         :param name: The name of the layer.
@@ -168,10 +169,22 @@ class GeoPackage(object):
         
         :param geometry: The geometry. It can be None for a non spatial table.
         :type geometry: wkbType
+        
+        :param pk: The name of the primary key. It has to be in fields.
+        :type pk: basestring
         """
         # TODO
         # Check non spatial table, (CRS and geometry)
         # Check if the layer is existing
+
+        options = []
+        if pk:
+            for field in fields:
+                if field.name() == pk:
+                    options += ['FID=' + pk]
+                    break
+            else:
+                return False, 'The PK is not in the fields'
 
         name = name.encode('utf-8')
 
@@ -182,28 +195,23 @@ class GeoPackage(object):
 
         vector_datasource = GeoPackage.vector_driver.Open(
             self._uri.absoluteFilePath(), True)
-        ogr_layer = vector_datasource.CreateLayer(
-            name, gdal_spatial_reference, geometry)
-        ogr_layer.DeleteField(0)
+        vector_datasource.CreateLayer(
+            name, gdal_spatial_reference, geom_type=geometry, options=options)
         del vector_datasource
 
         qgis_layer = self.layer(name)
+
         qgis_layer.startEditing()
-        fid_in_fields = False
         for field in fields:
-            if field.name() == 'fid':
-                fid_in_fields = True
-            qgis_layer.addAttribute(field)
+            if pk and field.name() == pk:
+                continue
+            if not qgis_layer.addAttribute(field):
+                return False, 'Error while adding the field'
         qgis_layer.commitChanges()
 
-        # Hack to remove the field creating by OGR. Not working for now.
-        if not fid_in_fields:
-            data_provider = qgis_layer.dataProvider()
-            index = qgis_layer.fieldNameIndex('fid')
-            print data_provider.deleteAttributes([index])
-            qgis_layer.updateFields()
+        return True, ''
 
-    def add_vector_layer(self, layer):
+    def add_vector_layer(self, layer, pk=None):
         """Add a vector layer to the geopackage.
 
         :param layer: The layer to add.
@@ -215,13 +223,25 @@ class GeoPackage(object):
         :rtype: (bool, str)
         """
         name = layer.name().replace(' ', '_')
-        self.create_vector_layer(
-            name, layer.fields(), layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()])
+        result, msg = self.create_vector_layer(
+            name, layer.fields(), layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()], pk=pk)
+        if not result:
+            return False, msg
         vector_layer = self.layer(name)
 
-        data_provider = vector_layer.dataProvider()
+        vector_layer.startEditing()
         for feature in layer.getFeatures():
-            data_provider.addFeatures([feature])
+            out_feature = QgsFeature(feature)
+            attributes = feature.attributes()
+            if not pk:
+                attributes.insert(0, feature.id())
+            out_feature.setAttributes(attributes)
+            res = vector_layer.addFeature(out_feature, False)
+            if not res:
+                return False, 'Could not add feature'
+
+        if not vector_layer.commitChanges():
+            return False, vector_layer.commitErrors()
 
         return True, name
 
@@ -245,36 +265,37 @@ class GeoPackage(object):
 
 
 # Testing
-from tempfile import mktemp
-from qgis.core import (
-    QgsVectorLayer,
-    QgsRasterLayer,
-    QgsField,
-    QgsCoordinateReferenceSystem,
-    QGis,
-)
-from PyQt4.QtCore import QFileInfo, QVariant
-from osgeo import gdal
-
-path = QFileInfo(mktemp() + '.gpkg')
-geopackage = GeoPackage(path)
-path.refresh()
-assert path.exists()
-
-# Create a new field from scratch
-new_fields = [
-    QgsField('id', QVariant.Int),
-    QgsField('name', QVariant.String)
-]
-crs = QgsCoordinateReferenceSystem('EPSG:4326')
-geopackage.create_vector_layer('test', new_fields, crs, QGis.WKBPolygon)
-geopackage.create_vector_layer('test2', new_fields, crs, QGis.WKBPolygon)
-geopackage.create_vector_layer('test3', new_fields, crs, QGis.WKBPolygon)
-geopackage.remove('test')
-assert 'test2' in geopackage.vector_layers_list()
-print geopackage.vector_layers_list()
-print path.absoluteFilePath()
+# from tempfile import mktemp
+# from qgis.core import (
+#     QgsVectorLayer,
+#     QgsRasterLayer,
+#     QgsField,
+#     QgsCoordinateReferenceSystem,
+#     QGis,
+# )
+# from PyQt4.QtCore import QFileInfo, QVariant
+# from osgeo import gdal
 #
-# print "ADD"
-layer = iface.activeLayer()
-geopackage.add_vector_layer(layer)
+# path = QFileInfo(mktemp() + '.gpkg')
+# geopackage = GeoPackage(path)
+# path.refresh()
+# assert path.exists()
+#
+# # Create a new field from scratch
+# new_fields = [
+#     QgsField('id', QVariant.Int),
+#     QgsField('name', QVariant.String)
+# ]
+# pk = 'id'
+# crs = QgsCoordinateReferenceSystem('EPSG:4326')
+# geopackage.create_vector_layer('test', new_fields, crs, QGis.WKBPolygon, pk)
+# geopackage.create_vector_layer('test2', new_fields, crs, QGis.WKBPolygon, pk)
+# geopackage.create_vector_layer('test3', new_fields, crs, QGis.WKBPolygon, pk)
+# geopackage.remove('test')
+# assert 'test2' in geopackage.vector_layers_list()
+# print geopackage.vector_layers_list()
+# print path.absoluteFilePath()
+# #
+# # print "ADD"
+# layer = iface.activeLayer()
+# print geopackage.add_vector_layer(layer, pk='OBJECTID')
