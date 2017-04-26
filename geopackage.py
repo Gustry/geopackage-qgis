@@ -168,11 +168,14 @@ class GeoPackage(object):
 
         return layer
 
-    def create_vector_layer(self, name, crs=None, geometry=None):
+    def create_vector_layer(self, name, fields, crs=None, geometry=None):
         """Create a vector layer from scratch.
         
         :param name: The name of the layer.
         :type name: basestring
+        
+        :param fields: The list of fields in the new layer.
+        :type fields: list
         
         :param crs: The CRS of the new layer.
         :type crs: QgsCoordinateReferenceSystem
@@ -184,16 +187,12 @@ class GeoPackage(object):
         # Check non spatial table, (CRS and geometry)
         # Check if the layer is existing
 
-        print name
-        print crs.authid()
-        print geometry
+        name = name.encode('utf-8')
 
         gdal_spatial_reference = osr.SpatialReference()
         qgis_spatial_reference = crs.authid()
         gdal_spatial_reference.ImportFromEPSG(
             int(qgis_spatial_reference.split(':')[1]))
-
-        print int(qgis_spatial_reference.split(':')[1])
 
         vector_datasource = GeoPackage.vector_driver.Open(
             self._uri.absoluteFilePath(), True)
@@ -213,10 +212,8 @@ class GeoPackage(object):
 
         # Hack to remove the field creating by OGR. Not working for now.
         if not fid_in_fields:
-            print 'here'
             data_provider = qgis_layer.dataProvider()
             index = qgis_layer.fieldNameIndex('fid')
-            print index
             print data_provider.deleteAttributes([index])
             qgis_layer.updateFields()
 
@@ -231,20 +228,26 @@ class GeoPackage(object):
             name which has been used or the error message.
         :rtype: (bool, str)
         """
-        print layer.wkbType()
-        print QGIS_OGR_GEOMETRY_MAP[layer.wkbType()]
+        name = layer.name().replace(' ', '_')
         self.create_vector_layer(
-            layer.name(), layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()])
-        vector_layer = self.layer(layer.name())
+            name, layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()])
+        print "ADD VECTOR LAYER"
+        print name
+        print self.vector_layers_list()
+        vector_layer = self.layer(name)
 
         data_provider = vector_layer.dataProvider()
         for feature in vector_layer.getFeatures():
             data_provider.addFeatures([feature])
 
-        return True, layer.name()
+        return True, name
 
     def remove(self, name):
-
+        """Remove a layer from the geopackage.
+        
+        :param name: The name of the layer to remove.
+        :type name: basestring
+        """
         if name in self.vector_layers_list():
             datasource = GeoPackage.vector_driver.Open(
                 self._uri.absoluteFilePath(), True)
@@ -265,20 +268,19 @@ path.refresh()
 assert path.exists()
 
 # Create a new field from scratch
-fields = [
+new_fields = [
     QgsField('id', QVariant.Int),
     QgsField('name', QVariant.String)
 ]
 crs = QgsCoordinateReferenceSystem('EPSG:4326')
-geopackage.create_vector_layer('test', crs, QGis.WKBPolygon)
-geopackage.create_vector_layer('test2', crs, QGis.WKBPolygon)
-geopackage.create_vector_layer('test3', crs, QGis.WKBPolygon)
+geopackage.create_vector_layer('test', new_fields, crs, QGis.WKBPolygon)
+geopackage.create_vector_layer('test2', new_fields, crs, QGis.WKBPolygon)
+geopackage.create_vector_layer('test3', new_fields, crs, QGis.WKBPolygon)
 geopackage.remove('test')
 assert 'test2' in geopackage.vector_layers_list()
 print geopackage.vector_layers_list()
-print 'working'
 print path.absoluteFilePath()
-
-print "ADD"
-layer = iface.activeLayer()
-geopackage.add_vector_layer(layer)
+#
+# print "ADD"
+# layer = iface.activeLayer()
+# geopackage.add_vector_layer(layer)
