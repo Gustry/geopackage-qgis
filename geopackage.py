@@ -5,20 +5,6 @@ from qgis.core import (
     QgsRasterLayer,
 )
 
-# Testing
-from tempfile import mktemp
-from qgis.core import (
-    QgsVectorLayer,
-    QgsRasterLayer,
-    QgsField,
-    QgsCoordinateReferenceSystem,
-    QGis,
-)
-from PyQt4.QtCore import QFileInfo, QVariant
-from osgeo import gdal
-# End testing
-
-
 # From https://qgis.org/api/classQGis.html#a8da456870e1caec209d8ba7502cceff7
 QGIS_OGR_GEOMETRY_MAP = {
     0: ogr.wkbUnknown,
@@ -196,9 +182,9 @@ class GeoPackage(object):
 
         vector_datasource = GeoPackage.vector_driver.Open(
             self._uri.absoluteFilePath(), True)
-        layer = vector_datasource.CreateLayer(
+        ogr_layer = vector_datasource.CreateLayer(
             name, gdal_spatial_reference, geometry)
-        layer.DeleteField(0)
+        ogr_layer.DeleteField(0)
         del vector_datasource
 
         qgis_layer = self.layer(name)
@@ -230,14 +216,11 @@ class GeoPackage(object):
         """
         name = layer.name().replace(' ', '_')
         self.create_vector_layer(
-            name, layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()])
-        print "ADD VECTOR LAYER"
-        print name
-        print self.vector_layers_list()
+            name, layer.fields(), layer.crs(), QGIS_OGR_GEOMETRY_MAP[layer.wkbType()])
         vector_layer = self.layer(name)
 
         data_provider = vector_layer.dataProvider()
-        for feature in vector_layer.getFeatures():
+        for feature in layer.getFeatures():
             data_provider.addFeatures([feature])
 
         return True, name
@@ -262,6 +245,17 @@ class GeoPackage(object):
 
 
 # Testing
+from tempfile import mktemp
+from qgis.core import (
+    QgsVectorLayer,
+    QgsRasterLayer,
+    QgsField,
+    QgsCoordinateReferenceSystem,
+    QGis,
+)
+from PyQt4.QtCore import QFileInfo, QVariant
+from osgeo import gdal
+
 path = QFileInfo(mktemp() + '.gpkg')
 geopackage = GeoPackage(path)
 path.refresh()
@@ -282,5 +276,5 @@ print geopackage.vector_layers_list()
 print path.absoluteFilePath()
 #
 # print "ADD"
-# layer = iface.activeLayer()
-# geopackage.add_vector_layer(layer)
+layer = iface.activeLayer()
+geopackage.add_vector_layer(layer)
